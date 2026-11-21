@@ -63,7 +63,7 @@ async def send_tracks(m,title,desc,ts):
   except Exception:await m.answer(cap(t),reply_markup=trackkb(t))
 @dp.message(CommandStart())
 async def start(m):
- db.execute("INSERT OR IGNORE INTO users VALUES(?,?)",(m.from_user.id,m.from_user.username));db.commit()
+ db.execute("INSERT OR IGNORE INTO users(id,username) VALUES(?,?)",(m.from_user.id,m.from_user.username));db.commit()
  await m.answer("🎧 <b>NEO MUSIC</b>\nТвоя музыка. Твоё настроение.\n\nВыбирай:",reply_markup=menu())
 @dp.message(Command("help"))
 async def help(m):await m.answer("Нажимай кнопки меню: AI DJ — настроение/описание, Поиск — артист или песня.",reply_markup=menu())
