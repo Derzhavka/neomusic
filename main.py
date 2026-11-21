@@ -2,7 +2,7 @@ import asyncio, json, logging, os, sqlite3
 import httpx
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
@@ -23,11 +23,7 @@ CREATE TABLE IF NOT EXISTS playlists(id INTEGER PRIMARY KEY AUTOINCREMENT,user_i
 """);db.commit()
 
 def esc(v):return str(v or "").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
-def menu():return InlineKeyboardMarkup(inline_keyboard=[
- [InlineKeyboardButton(text="✨ AI DJ",callback_data="ai"),InlineKeyboardButton(text="🔎 Поиск",callback_data="search")],
- [InlineKeyboardButton(text="🎭 Настроение",callback_data="moods"),InlineKeyboardButton(text="📀 Плейлисты",callback_data="lists")],
- [InlineKeyboardButton(text="❤️ Избранное",callback_data="fav"),InlineKeyboardButton(text="🎲 Микс дня",callback_data="daily")],
- [InlineKeyboardButton(text="👤 Профиль",callback_data="profile")]])
+def menu():return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="✨ AI DJ"),KeyboardButton(text="🔎 Поиск")],[KeyboardButton(text="🎭 Настроение"),KeyboardButton(text="📀 Плейлисты")],[KeyboardButton(text="❤️ Избранное"),KeyboardButton(text="🎲 Микс дня")],[KeyboardButton(text="👤 Профиль")]],resize_keyboard=True,persistent=True,input_field_placeholder="Выбери действие…")
 def trackkb(t):
  rows=[[InlineKeyboardButton(text="▶️ Превью 30 сек",callback_data="play:"+t["id"]),InlineKeyboardButton(text="❤️",callback_data="like:"+t["id"])]]
  if t.get("link"):rows.append([InlineKeyboardButton(text="🎧 Deezer",url=t["link"])])
@@ -82,6 +78,34 @@ async def mood(c):
  await c.answer("Ищу…");t,d,ts=await mix(q);await send_tracks(c.message,t,d,ts)
 @dp.callback_query(F.data=="daily")
 async def daily(c):await c.answer("Собираю…");t,d,ts=await mix("микс дня, популярные современные песни и разные жанры");await send_tracks(c.message,"☀️ Микс дня · "+t,d,ts)
+@dp.message(F.text.in_({"✨ AI DJ","🔎 Поиск","🎭 Настроение","📀 Плейлисты","❤️ Избранное","🎲 Микс дня","👤 Профиль"}))
+async def keyboard_action(m):
+ state.pop(m.from_user.id,None)
+ action=m.text
+ if action=="✨ AI DJ":state[m.from_user.id]="ai";await m.answer("✨ Опиши настроение, жанр, ситуацию или исполнителей. Например: «ночная поездка, грустный рэп».");return
+ if action=="🔎 Поиск":state[m.from_user.id]="search";await m.answer("🔎 Введи имя исполнителя или название песни.");return
+ if action=="🎭 Настроение":
+  moods=[[("🌙 Ночь","night"),("💔 Грусть","sad")],[("⚡ Энергия","energy"),("🌧 Дождь","rain")],[("💗 Романтика","love"),("🏋️ Спорт","gym")],[("🧘 Спокойствие","calm"),("🚗 Дорога","drive")]]
+  kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=a,callback_data="mood:"+b) for a,b in row] for row in moods]+[[InlineKeyboardButton(text="⬅️ Меню",callback_data="home")]])
+  await m.answer("Выбери настроение:",reply_markup=kb);return
+ if action=="📀 Плейлисты":
+  kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="✨ Создать AI-плейлист",callback_data="newpl")],[InlineKeyboardButton(text="📂 Мои плейлисты",callback_data="mypl")]])
+  await m.answer("📀 <b>Плейлисты</b>",reply_markup=kb);return
+ if action=="❤️ Избранное":
+  rs=db.execute("SELECT * FROM favorites WHERE user_id=? ORDER BY rowid DESC",(m.from_user.id,)).fetchall()
+  if not rs:await m.answer("Избранное пусто — нажми ❤️ у трека.");return
+  await m.answer(f"❤️ <b>Избранное · {len(rs)}</b>")
+  for t in rs:await m.answer(cap(t),reply_markup=trackkb(dict(t)))
+  return
+ if action=="🎲 Микс дня":
+  await m.answer("🎲 Собираю микс дня…")
+  try:t,d,ts=await mix("микс дня, популярные современные песни и разные жанры");await send_tracks(m,"☀️ Микс дня · "+t,d,ts)
+  except Exception:logging.exception("daily mix failed");await m.answer("Не удалось собрать микс, попробуй позже.")
+  return
+ if action=="👤 Профиль":
+  f=db.execute("SELECT COUNT(*) FROM favorites WHERE user_id=?",(m.from_user.id,)).fetchone()[0];p=db.execute("SELECT COUNT(*) FROM playlists WHERE user_id=?",(m.from_user.id,)).fetchone()[0]
+  await m.answer(f"👤 <b>Профиль</b>\\n❤️ Избранное: {f}\\n📀 Плейлисты: {p}",reply_markup=menu())
+
 @dp.message()
 async def input_text(m):
  mode=state.pop(m.from_user.id,None)
